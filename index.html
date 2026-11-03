@@ -41,6 +41,11 @@ button.p{background:var(--acc);color:#fff;border-color:var(--acc)}
 #mv span{display:inline-block;min-width:4.2em;margin-right:6px}
 #mv .n{color:var(--mut);min-width:2.2em}
 input{width:100%;font:inherit;font-size:.8rem;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);margin-top:6px}
+#bd{position:relative}
+select{font:inherit;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+#eb{height:14px;border-radius:7px;background:#14201e;overflow:hidden;border:1px solid var(--line)}
+#ew{height:100%;background:#fff;width:50%;transition:width .25s}
+#rt{font-size:1rem;min-height:1.5em}
 </style>
 <script src="coi-sw.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -52,8 +57,15 @@ input{width:100%;font:inherit;font-size:.8rem;padding:8px;border-radius:8px;bord
 <div class="card" style="margin:0 0 10px"><b>เล่นออนไลน์</b>
 <div class="row" style="margin:8px 0 0"><button class="p" id="mk">สร้างห้อง</button><input id="jc" placeholder="รหัสห้อง" style="width:8.5em;margin:0" maxlength="6" aria-label="รหัสห้อง"><button id="jn">เข้าห้อง</button></div>
 <div id="ns" style="color:var(--mut);font-size:.85rem;margin-top:6px">ยังไม่ได้ต่อห้อง (เล่นสลับกันบนเครื่องนี้ได้)</div></div>
+<div class="card" style="margin:0 0 10px"><b>เล่นกับ Stockfish 19</b>
+<div class="row" style="margin:8px 0 0"><select id="lv" aria-label="ระดับ"><option value="max">สุดโหด</option><option value="mid">กลาง</option><option value="easy">ง่าย</option></select><select id="sd" aria-label="สีของคุณ"><option value="w">เล่นขาว</option><option value="b">เล่นดำ</option><option value="r">สุ่มสี</option></select><button class="p" id="bt">เริ่มเกม</button></div>
+<div id="bs" style="color:var(--mut);font-size:.85rem;margin-top:6px"></div></div>
 <div class="bar"><span id="st"></span><span id="ct" style="color:var(--mut);font-weight:500"></span></div>
 <div id="bd" role="grid" aria-label="กระดานหมากรุก"></div>
+<div id="rv" class="card" style="display:none;margin:10px 0 0">
+<div id="eb"><div id="ew"></div></div>
+<div class="row" style="margin:8px 0"><button id="r0" aria-label="ตำแหน่งเริ่มต้น">⏮</button><button id="r1" aria-label="ตาก่อนหน้า">◀</button><button id="r2" aria-label="ตาถัดไป">▶</button><button id="r3" aria-label="ตาสุดท้าย">⏭</button><button id="rx">ออกจากรีวิว</button></div>
+<div id="rt"></div><div id="ra" style="color:var(--mut);font-size:.9rem;margin-top:4px"></div></div>
 <div id="pr"><span>เลื่อนขั้นเป็น</span></div>
 <div class="row">
 <button class="p" id="nw">เกมใหม่</button>
@@ -65,7 +77,7 @@ input{width:100%;font:inherit;font-size:.8rem;padding:8px;border-radius:8px;bord
 <div class="card"><b>บันทึกการเดิน</b><div id="mv"></div></div>
 <div class="card"><b>FEN ของตำแหน่งปัจจุบัน</b><input id="fen" readonly aria-label="FEN"><div class="row" style="margin-bottom:0"><button id="cf">คัดลอก FEN</button></div></div>
 <div class="card"><b>PGN</b><div class="row" style="margin:8px 0 0"><button class="p" id="dp">ดาวน์โหลด .pgn</button><button id="cp2">คัดลอก PGN</button></div></div>
-<div class="card"><b>วิเคราะห์ด้วย Stockfish (หลังจบเกม)</b><div class="row" style="margin:8px 0 0"><button id="an">วิเคราะห์เกมนี้</button></div><div id="ao" style="font-size:.9rem;margin-top:6px"></div></div>
+<div class="card"><b>รีวิวเกมด้วย Stockfish (หลังจบเกม)</b><div class="row" style="margin:8px 0 0"><button id="an">รีวิวเกมนี้</button></div><div id="ao" style="font-size:.9rem;margin-top:6px"></div></div>
 </main>
 <script>
 const G={K:'♚',Q:'♛',R:'♜',B:'♝',N:'♞',P:'♟'};
@@ -128,31 +140,32 @@ RES=!l.length?(chk?(S.t==='w'?'0-1':'1-0'):'1/2-1/2'):S.h>=100?'1/2-1/2':'*';
 if(forced){RES=forced;over='จบเกม: '+(forced==='1-0'?'ขาว':'ดำ')+'ชนะ (อีกฝ่ายยอมแพ้)'}
 $('st').innerHTML='<span class="dot '+S.t+'"></span>'+(over||('ตาของ'+nm+(chk?' (โดนรุก)':'')));
 $('ct').textContent='ตาที่ '+S.n}
-function render(){const bd=$('bd');bd.innerHTML='';const last=hist.length?hist[hist.length-1].m:null,ck=inChk(S)?kingSq(S.b,S.t):-1;
-for(let v=0;v<64;v++){const i=flip?63-v:v,r=i>>3,c=i&7,d=document.createElement('div'),p=S.b[i];
+function render(){const bd=$('bd');bd.innerHTML='';const V=view===null||view>=hist.length?S:hist[view].s,lh=view===null?hist.length:view,last=lh?hist[lh-1].m:null,ck=inChk(V)?kingSq(V.b,V.t):-1;
+for(let v=0;v<64;v++){const i=flip?63-v:v,r=i>>3,c=i&7,d=document.createElement('div'),p=V.b[i];
 d.className='sq '+((r+c)%2?'dk':'lt')+(sel===i?' sel':'')+(last&&(last.f===i||last.to===i)?' lm':'')+(ck===i?' ck':'');
 if(tg.some(m=>m.to===i))d.classList.add(p!=='.'?'cp':'mv');
 if(p!=='.'){const s=document.createElement('span');s.className='pc '+col(p);s.textContent=G[p.toUpperCase()]+'\uFE0E';d.append(s)}
 d.setAttribute('aria-label',sqn(i)+(p!=='.'?' '+p:''));d.onclick=()=>click(i);bd.append(d)}
-status();$('fen').value=fen(S);
+if(view!==null&&REV)arrow(view);status();$('fen').value=fen(S);reviewUI();
 const mv=$('mv');mv.innerHTML='';
-for(let k=0;k<hist.length;k+=2){mv.insertAdjacentHTML('beforeend','<span class="n">'+(k/2+1)+'.</span><span>'+hist[k].san+'</span><span>'+(hist[k+1]?hist[k+1].san:'')+'</span><br>')}
+const mk2=k=>hist[k]?'<span data-i="'+(k+1)+'"'+(view===k+1?' style="background:var(--lt);border-radius:4px"':'')+'>'+hist[k].san+(REV&&REV.cl[k]?' <i style="color:'+REV.cl[k].c+'">●</i>':'')+'</span>':'<span></span>';
+for(let k=0;k<hist.length;k+=2){mv.insertAdjacentHTML('beforeend','<span class="n">'+(k/2+1)+'.</span>'+mk2(k)+mk2(k+1)+'<br>')}
 mv.scrollTop=mv.scrollHeight;$('pr').style.display=pend?'flex':'none'}
-function play(m,remote){hist.push({s:S,m,san:san(S,m)});S=app(S,m);sel=null;tg=[];pend=null;render();if(!remote&&conn&&conn.open)conn.send({t:'mv',m})}
-function click(i){if(over||pend||(me&&S.t!==me))return;
+function play(m,remote){hist.push({s:S,m,san:san(S,m)});S=app(S,m);sel=null;tg=[];pend=null;render();if(!remote&&conn&&conn.open)conn.send({t:'mv',m});if(bot&&S.t===bot&&!over)setTimeout(botMove,200)}
+function click(i){if(over||pend||view!==null||(me&&S.t!==me)||(bot&&S.t===bot))return;
 const m=tg.filter(x=>x.to===i);
 if(sel!==null&&m.length){if(m[0].pr){pend=m;render();return}play(m[0]);return}
 const p=S.b[i];if(p!=='.'&&col(p)===S.t){sel=i;tg=legal(S).filter(x=>x.f===i)}else{sel=null;tg=[]}render()}
 (function(){const pr=$('pr');for(const q of'qrbn'){const b=document.createElement('button');b.textContent=G[q.toUpperCase()==='N'?'N':q.toUpperCase()]+'\uFE0E';b.setAttribute('aria-label','เลื่อนขั้นเป็น '+q);
 b.onclick=()=>{const m=pend.find(x=>x.pr===q);play(m)};pr.append(b)}})();
-$('nw').onclick=()=>{fresh();if(conn&&conn.open)conn.send({t:'new'})};
-$('un').onclick=()=>{if(!hist.length||conn)return;S=hist.pop().s;sel=null;tg=[];pend=null;render()};
+$('nw').onclick=()=>{fresh();if(conn&&conn.open)conn.send({t:'new'});if(bot==='w')botMove()};
+$('un').onclick=()=>{if(!hist.length||conn||view!==null)return;botTok++;forced='';do{S=hist.pop().s}while(bot&&hist.length&&S.t===bot);sel=null;tg=[];pend=null;render();if(bot&&S.t===bot)botMove()};
 $('fl').onclick=()=>{flip=!flip;render()};
 $('th').onclick=()=>{const r=document.documentElement,d=getComputedStyle(r).getPropertyValue('--bg').trim()==='#0f1b19';r.dataset.theme=d?'light':'dark'};
 $('cf').onclick=async()=>{try{await navigator.clipboard.writeText($('fen').value);$('cf').textContent='คัดลอกแล้ว'}catch(e){$('fen').select();$('cf').textContent='เลือกข้อความแล้ว กดคัดลอกเอง'}setTimeout(()=>$('cf').textContent='คัดลอก FEN',1800)};
 
-let RES='*',forced='',peer=null,conn=null,me=null;
-function fresh(){S=init();hist=[];sel=null;tg=[];pend=null;forced='';$('ao').textContent='';render()}
+let REV=null,view=null,bot=null,botTok=0,bw=null,RES='*',forced='',peer=null,conn=null,me=null;
+function fresh(){REV=null;view=null;botTok++;S=init();hist=[];sel=null;tg=[];pend=null;forced='';$('ao').textContent='';render()}
 const setNet=t=>{$('ns').textContent=t};
 function wire(c){conn=c;
 c.on('open',()=>{setNet('เชื่อมต่อแล้ว: คุณเล่น'+(me==='w'?'ขาว':'ดำ'));flip=me==='b';fresh()});
@@ -160,11 +173,11 @@ c.on('data',d=>{if(d.t==='mv'&&!over&&S.t!==me){const m=legal(S).find(x=>x.f===d
 else if(d.t==='new')fresh();else if(d.t==='res'){forced=d.r;render()}});
 c.on('close',()=>setNet('การเชื่อมต่อหลุด กด สร้างห้อง หรือ เข้าห้อง ใหม่'))}
 function mkPeer(id){if(peer)peer.destroy();conn=null;peer=id?new Peer(id):new Peer();peer.on('error',e=>setNet('เชื่อมต่อไม่สำเร็จ: '+e.type));return peer}
-$('mk').onclick=()=>{const code=Math.random().toString(36).slice(2,8).toUpperCase();me='w';
+$('mk').onclick=()=>{bot=null;const code=Math.random().toString(36).slice(2,8).toUpperCase();me='w';
 const p=mkPeer('chessroom-'+code);p.on('open',()=>setNet('รหัสห้อง: '+code+' (ส่งให้เพื่อน แล้วรอเขาเข้า) คุณเล่นขาว'));p.on('connection',wire)};
-$('jn').onclick=()=>{const code=$('jc').value.trim().toUpperCase();if(!code)return;me='b';
+$('jn').onclick=()=>{bot=null;const code=$('jc').value.trim().toUpperCase();if(!code)return;me='b';
 const p=mkPeer();p.on('open',()=>{setNet('กำลังเข้าห้อง '+code+'...');wire(p.connect('chessroom-'+code))})};
-$('rs').onclick=()=>{if(over)return;forced=(me?me==='w':S.t==='w')?'0-1':'1-0';if(conn&&conn.open)conn.send({t:'res',r:forced});render()};
+$('rs').onclick=()=>{if(over)return;forced=((me||(bot?(bot==='w'?'b':'w'):S.t))==='w')?'0-1':'1-0';if(conn&&conn.open)conn.send({t:'res',r:forced});render()};
 function pgn(){const d=new Date().toISOString().slice(0,10).replace(/-/g,'.');let t='';
 hist.forEach((h,k)=>{t+=(k%2?'':(k/2+1)+'. ')+h.san+' '});
 return '[Event "Chess Room"]\n[Date "'+d+'"]\n[White "White"]\n[Black "Black"]\n[Result "'+RES+'"]\n\n'+t+RES+'\n'}
@@ -176,17 +189,39 @@ let sc=0;sf.onerror=bad;
 sf.onmessage=e=>{const l=String(e.data),m=l.match(/score (cp|mate) (-?\d+)/);if(m&&/ pv /.test(l))sc=m[1]==='cp'?+m[2]:(+m[2]>0?1:-1)*(10000-Math.abs(+m[2]));
 if(l.startsWith('bestmove'))ok({sc:f.split(' ')[1]==='w'?sc:-sc,best:l.split(' ')[1]})};
 sf.postMessage('position fen '+f);sf.postMessage('go depth 12')})}
+const K=[{t:'ดีที่สุด',c:'#3a9d5d'},{t:'ดีเยี่ยม',c:'#6fb86f'},{t:'ดี',c:'#8aa39e'},{t:'ไม่แม่น',c:'#e3b341'},{t:'พลาด',c:'#e68a2e'},{t:'พลาดหนัก',c:'#d9453d'}];
+const wp=cp=>50+50*(2/(1+Math.exp(-0.00368208*Math.max(-1000,Math.min(1000,cp))))-1);
+const uci=m=>sqn(m.f)+sqn(m.to)+(m.pr||'');
 $('an').onclick=async()=>{const o=$('ao');
-if(!over){o.textContent='วิเคราะห์ได้หลังจบเกมเท่านั้น เพื่อไม่ให้ใช้เอนจินช่วยเดินระหว่างเล่น';return}
+if(!over){o.textContent='รีวิวได้หลังจบเกมเท่านั้น เพื่อไม่ให้ใช้เอนจินช่วยเดินระหว่างเล่น';return}
 if(!hist.length){o.textContent='ยังไม่มีตาเดิน';return}
+if(REV){view=0;render();return}
 const fs=hist.map(h=>fen(h.s)).concat([fen(S)]),r=[];
 try{for(let i=0;i<fs.length;i++){o.textContent='กำลังวิเคราะห์ '+(i+1)+'/'+fs.length;
 if(i===fs.length-1&&!legal(S).length)r.push({sc:RES==='1-0'?10000:RES==='0-1'?-10000:0,best:''});else r.push(await ev(fs[i]))}}
 catch(e){o.textContent='โหลด Stockfish ไม่สำเร็จ: วางไฟล์ '+SF_PATH+' และ .wasm ชื่อเดียวกันไว้โฟลเดอร์เดียวกับหน้านี้ พร้อม coi-sw.js แล้วรีเฟรชหน้า 1 ครั้ง';return}
-let h='';hist.forEach((x,i)=>{const w=i%2===0,drop=w?r[i].sc-r[i+1].sc:r[i+1].sc-r[i].sc;
-if(drop>=70)h+='<div>'+(Math.floor(i/2)+1)+(w?'. ':'... ')+x.san+' : '+(drop>=300?'พลาดหนัก':drop>=150?'พลาด':'ไม่แม่น')+' (เสีย '+(drop/100).toFixed(1)+' เบี้ย) ท่าที่ดีกว่า '+r[i].best+'</div>'});
-o.innerHTML=h||'ไม่พบท่าพลาดที่ชัดเจน'};
-render();
-</script>
-</body>
-</html>
+const w=r.map(x=>x.sc),cl=[],bs=[],ac={w:[],b:[]};
+for(let i=0;i<hist.length;i++){const white=i%2===0,s0=hist[i].s,bm=r[i].best,bmv=legal(s0).find(x=>uci(x)===bm);
+bs.push(bmv?san(s0,bmv):'');
+const drop=Math.max(0,white?w[i]-w[i+1]:w[i+1]-w[i]);
+cl.push(uci(hist[i].m)===bm?K[0]:drop<30?K[1]:drop<70?K[2]:drop<150?K[3]:drop<300?K[4]:K[5]);
+const b4=white?wp(w[i]):100-wp(w[i]),af=white?wp(w[i+1]):100-wp(w[i+1]);
+ac[white?'w':'b'].push(Math.min(100,Math.max(0,103.1668*Math.exp(-0.04354*Math.max(0,b4-af))-3.1669)))}
+bs.push('');REV={r,cl,bs};
+const avg=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):'-',cn=(p,k)=>cl.filter((c,i)=>i%2===(p==='w'?0:1)&&c===K[k]).length;
+o.innerHTML=['w','b'].map(p=>'<div>'+(p==='w'?'ขาว':'ดำ')+' แม่นยำ '+avg(ac[p])+'% (ไม่แม่น '+cn(p,3)+', พลาด '+cn(p,4)+', พลาดหนัก '+cn(p,5)+')</div>').join('');
+view=0;render()};
+function reviewUI(){const R=$('rv');if(!REV||view===null){R.style.display='none';return}
+R.style.display='block';const i=view,sc=REV.r[i].sc;$('ew').style.width=wp(sc)+'%';
+const e=Math.abs(sc)>=9000?(sc>0?'M':'-M'):(sc>0?'+':'')+(sc/100).toFixed(1);
+let t='ตำแหน่งเริ่มต้น ('+e+')';
+if(i>0){const c=REV.cl[i-1];t=Math.ceil(i/2)+(i%2?'. ':'... ')+hist[i-1].san+' <b style="color:'+c.c+'">'+c.t+'</b> ('+e+')'}
+$('rt').innerHTML=t;$('ra').textContent=i<hist.length?'ท่าที่ดีที่สุดในตำแหน่งนี้: '+REV.bs[i]+' (ลูกศรเขียว)':'จบเกม'}
+function arrow(i){if(i>=hist.length)return;const u=REV.r[i].best;if(!u||u.length<4)return;
+const X=c=>(flip?7-c:c)+.5,Y=r=>(flip?7-r:r)+.5,x1=X(u.charCodeAt(0)-97),y1=Y(8-+u[1]),x2=X(u.charCodeAt(2)-97),y2=Y(8-+u[3]),
+dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,hx=x2-ux*.32,hy=y2-uy*.32;
+$('bd').insertAdjacentHTML('beforeend','<svg viewBox="0 0 8 8" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3"><line x1="'+x1+'" y1="'+y1+'" x2="'+hx+'" y2="'+hy+'" stroke="#3a9d5d" stroke-width=".18" stroke-linecap="round" opacity=".85"/><polygon points="'+x2+','+y2+' '+(hx-uy*.2)+','+(hy+ux*.2)+' '+(hx+uy*.2)+','+(hy-ux*.2)+'" fill="#3a9d5d" opacity=".85"/></svg>')}
+const go=i=>{if(!REV)return;view=Math.max(0,Math.min(hist.length,i));render()};
+$('r0').onclick=()=>go(0);$('r1').onclick=()=>go((view??hist.length)-1);$('r2').onclick=()=>go((view??0)+1);$('r3').onclick=()=>go(hist.length);
+$('rx').onclick=()=>{view=null;render()};
+addEventListener('keydown',e=>{if(view===null)return;if(e.k
