@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เล่นหมากรุกกับ Stockfish 19</title>
+<style>
+  :root{
+    --bg:#15171b; --panel:#1e2127; --panel2:#262a32; --line:#333844;
+    --text:#e8eaee; --muted:#9aa1ad; --accent:#6aa84f; --accent2:#8bc56a;
+    --light:#eeeed2; --dark:#769656;
+    --sel:rgba(255,230,60,.55); --last:rgba(255,214,10,.38); --hint:rgba(70,150,255,.55);
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html{overflow-y:scroll;scrollbar-gutter:stable}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.5 system-ui,-apple-system,"Segoe UI","Noto Sans Thai","Sarabun",sans-serif}
+  button,select,input{font:inherit;color:inherit;touch-action:manipulation}
+  .app{max-width:1000px;margin:0 auto;padding:16px;display:grid;
+    grid-template-columns:minmax(0,560px) minmax(260px,1fr);gap:20px;align-items:start}
+  @media (max-width:820px){.app{grid-template-columns:minmax(0,1fr);padding:10px}}
+  header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  h1{font-size:1.25rem;margin:0;font-weight:650;letter-spacing:.2px}
+  h1 span{color:var(--accent2)}
+  .hdr-r{display:flex;align-items:center;gap:8px}
+  .iconbtn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-size:1rem;line-height:1;padding:0}
+  .iconbtn:hover{background:#313641}
+  .badge{display:inline-flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);
+    background:var(--panel);border:1px solid var(--line);padding:4px 10px;border-radius:999px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#777}
+  .dot.ready{background:#4cc26b}.dot.err{background:#e5534b}.dot.load{background:#d9a441;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+
+  .boardwrap{display:flex;gap:8px}
+  .evalbar{width:16px;flex:none;border-radius:4px;overflow:hidden;background:#222;border:1px solid var(--line);
+    display:flex;flex-direction:column;justify-content:flex-end}
+  .evalbar.flip{justify-content:flex-start}
+  .evalbar .w{background:#f1f1f1;transition:height .35s ease;height:50%}
+  .board{flex:1;min-width:0;aspect-ratio:1;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));
+    container-type:inline-size;border-radius:6px;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.45);position:relative}
+  .sq{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none}
+  .sq.l{background:var(--light)}.sq.d{background:var(--dark)}
+  .sq.last::before,.sq.sel::before,.sq.hint::before{content:"";position:absolute;inset:0}
+  .sq.last::before{background:var(--last)}
+  .sq.sel::before{background:var(--sel)}
+  .sq.hint::before{background:var(--hint)}
+  .sq.check{background:radial-gradient(circle,#ff3b30 0%,#d6342a 38%,transparent 72%),var(--light)}
+  .sq.d.check{background:radial-gradient(circle,#ff3b30 0%,#d6342a 38%,transparent 72%),var(--dark)}
+  .sq.tgt::after{content:"";position:absolute;width:30%;height:30%;border-radius:50%;background:rgba(20,20,20,.22)}
+  .sq.cap::after{content:"";position:absolute;inset:4%;border-radius:50%;border:.9cqw solid rgba(20,20,20,.28)}
+  .coord{position:absolute;font-size:max(9px,2.1cqw);font-weight:700;opacity:.75;pointer-events:none}
+  .coord.r{top:3%;left:4%}.coord.f{bottom:2%;right:5%}
+  .sq.l .coord{color:var(--dark)}.sq.d .coord{color:var(--light)}
+  .piece{position:relative;z-index:1;line-height:1;font-size:10.2cqw;cursor:grab;
+    font-family:"Segoe UI Symbol","Noto Sans Symbols 2","Apple Symbols","DejaVu Sans",serif;paint-order:stroke fill}
+  .piece.w{color:#fdfdfd;-webkit-text-stroke:.55cqw #1b1b1b;text-shadow:0 .4cqw .6cqw rgba(0,0,0,.35)}
+  .piece.b{color:#1c1c1c;-webkit-text-stroke:.45cqw #e9e9e9;text-shadow:0 .4cqw .6cqw rgba(0,0,0,.35)}
+  .piece.locked{cursor:default}
+
+  .promo{position:absolute;inset:0;background:rgba(10,12,16,.72);display:flex;align-items:center;justify-content:center;z-index:5}
+  .promo-box{display:flex;gap:8px;background:var(--panel);border:1px solid var(--line);padding:10px;border-radius:10px}
+  .promo-box button{width:15cqw;height:15cqw;border-radius:8px;border:1px solid var(--line);background:var(--panel2);
+    cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .promo-box button:hover{background:#30353f}
+  .promo-box .piece{font-size:11cqw;cursor:pointer}
+
+  /* fixed height (room for 2 lines) so changing status text never resizes/moves anything */
+  .statusline{margin-top:10px;height:calc(3em + 18px);overflow:hidden;display:flex;align-items:center;gap:2px 10px;flex-wrap:wrap;align-content:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  .statusline strong{font-weight:650}
+  .evaltxt{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--muted);font-size:.88rem;white-space:nowrap}
+  .evaltxt:empty::before{content:'\00a0'}
+  .over{border-color:#a9873b;background:#2a2517}
+
+  aside{display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card h2{margin:0 0 10px;font-size:.78rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:650}
+  .row{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+  .row label{flex:0 0 7.5em;color:var(--muted);font-size:.9rem}
+  .row .ctl{flex:1;min-width:140px;display:flex;align-items:center;gap:8px}
+  select,input[type=range]{width:100%}
+  select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+  input[type=range]{accent-color:var(--accent)}
+  .elo{min-width:3.2em;text-align:right;font-variant-numeric:tabular-nums}
+  .chk{display:flex;gap:8px;align-items:center;font-size:.9rem;color:var(--muted)}
+  .btns{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .btn{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 10px;cursor:pointer;text-align:center}
+  .btn:hover:not(:disabled){background:#313641}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#0e1a08;font-weight:650;grid-column:1/-1}
+  .btn.primary:hover{background:var(--accent2)}
+  .moves{display:flex;flex-wrap:wrap;gap:2px 6px;max-height:210px;overflow:auto;font-variant-numeric:tabular-nums;font-size:.92rem}
+  .moves .n{color:var(--muted)}
+  .moves .m{padding:0 3px;border-radius:4px}
+  .moves .m.cur{background:rgba(106,168,79,.3)}
+  .help{border-color:#6b3a37;background:#241818;font-size:.9rem}
+  .help code{background:#0f1114;border:1px solid var(--line);padding:1px 6px;border-radius:5px;font-size:.85em}
+  .help a{color:#8cc0ff}
+  .help ol{margin:8px 0 0;padding-left:1.3em}
+  .note{font-size:.8rem;color:var(--muted);margin-top:6px}
+
+  .modal{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;
+    background:rgba(8,10,14,.66);backdrop-filter:blur(3px);animation:fade .2s ease}
+  .modal-box{position:relative;overflow:hidden;width:min(360px,100%);text-align:center;padding:26px 22px 20px;border-radius:16px;
+    background:var(--panel);border:1px solid var(--line);box-shadow:0 20px 60px rgba(0,0,0,.55);animation:pop .28s cubic-bezier(.2,1.3,.4,1)}
+  .modal-box.win{border-color:#6aa84f;box-shadow:0 20px 60px rgba(0,0,0,.55),0 0 0 1px #6aa84f,0 0 40px rgba(106,168,79,.25)}
+  .modal-box.lose{border-color:#8a4a46}
+  .modal-box.draw{border-color:#a9873b}
+  .modal-ico{font-size:3.2rem;line-height:1.1}
+  .modal-box h2{margin:8px 0 4px;font-size:1.5rem;font-weight:700}
+  .modal-box p{margin:0 0 18px;color:var(--muted)}
+  .modal-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .confetti{position:absolute;top:-12px;width:8px;height:14px;border-radius:2px;opacity:.95;pointer-events:none;animation:fall linear forwards}
+  @keyframes fade{from{opacity:0}}
+  @keyframes pop{from{transform:scale(.85);opacity:0}}
+  @keyframes fall{to{transform:translateY(420px) rotate(540deg);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.modal,.modal-box{animation:none}.confetti{display:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>♞ เล่นหมากรุกกับ <span>Stockfish 19</span></h1>
+    <div class="hdr-r">
+      <button class="iconbtn" id="bSound" title="เปิด/ปิดเสียงเอฟเฟกต์" aria-label="เปิด/ปิดเสียง">🔊</button>
+      <span class="badge"><i class="dot load" id="dot"></i><span id="badgeTxt">กำลังโหลดเอนจิน…</span></span>
+    </div>
+  </header>
+
+  <main>
+    <div class="boardwrap">
+      <div class="evalbar" id="evalbar" title="แถบประเมินตำแหน่ง (ขาวได้เปรียบ = ส่วนสีขาวยาว)"><div class="w" id="evalw"></div></div>
+      <div class="board" id="board">
+        <div class="promo" id="promo" hidden><div class="promo-box" id="promoBox"></div></div>
+      </div>
+    </div>
+    <div class="statusline" id="statusline">
+      <span id="statusTxt">กำลังเตรียมเกม…</span>
+      <span class="evaltxt" id="evalTxt"></span>
+    </div>
+  </main>
+
+  <aside>
+    <div class="card help" id="help" hidden>
+      <h2 style="color:#e5857e">โหลดเอนจินไม่สำเร็จ</h2>
+      <div id="helpMsg"></div>
+      <ol>
+        <li>ดาวน์โหลด 2 ไฟล์นี้ แล้ววางไว้โฟลเดอร์เดียวกับ <code>index.html</code>:<br>
+          <a id="dlJs" target="_blank" rel="noopener"></a><br>
+          <a id="dlWasm" target="_blank" rel="noopener"></a></li>
+        <li>เปิดผ่านเซิร์ฟเวอร์ ไม่ใช่ดับเบิลคลิกไฟล์ (<code>file://</code> ใช้ Web Worker ไม่ได้ในหลายเบราว์เซอร์):<br>
+          <code>python3 serve.py</code> แล้วเปิด <code>http://localhost:8000</code> (serve.py ส่งหัว COOP/COEP ที่เอนจินหลายเธรดต้องใช้)</li>
+        <li>รีเฟรชหน้านี้</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <h2>เกม</h2>
+      <div class="btns">
+        <button class="btn primary" id="bNew">เกมใหม่</button>
+        <button class="btn" id="bUndo">↶ ย้อนตา</button>
+        <button class="btn" id="bHint">💡 คำใบ้</button>
+        <button class="btn" id="bFlip">⇅ พลิกกระดาน</button>
+        <button class="btn" id="bPgn">คัดลอก PGN</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>ตั้งค่า</h2>
+      <div class="row"><label for="selColor">คุณเล่นสี</label>
+        <div class="ctl"><select id="selColor">
+          <option value="w">ขาว (เดินก่อน)</option><option value="b">ดำ</option><option value="r">สุ่ม</option>
+        </select></div></div>
+      <div class="row"><label for="rngElo">ความแรง (Elo)</label>
+        <div class="ctl"><input type="range" id="rngElo" min="1320" max="3190" step="10"><span class="elo" id="eloVal"></span></div></div>
+      <div class="row"><label></label>
+        <div class="ctl"><label class="chk" style="flex:auto"><input type="checkbox" id="chkMax"> เต็มกำลัง (ไม่จำกัดความแรง)</label></div></div>
+      <div class="row"><label for="selMs">เวลาคิด/ตา</label>
+        <div class="ctl"><select id="selMs">
+          <option value="300">0.3 วินาที</option><option value="1000">1 วินาที</option>
+          <option value="2000">2 วินาที</option><option value="5000">5 วินาที</option><option value="10000">10 วินาที</option>
+        </select></div></div>
+      <div class="row"><label for="selEng">เอนจิน</label>
+        <div class="ctl"><select id="selEng">
+          <option value="lite-mt">Lite หลายเธรด (≈1.7 MB) — stockfish-19-lite</option>
+          <option value="lite">Lite เธรดเดียว (≈1.7 MB) — ใช้ได้ทุกเซิร์ฟเวอร์</option>
+          <option value="full-mt">Full หลายเธรด (≈94 MB) แรงสุด</option>
+          <option value="full">Full เธรดเดียว (≈94 MB)</option>
+        </select></div></div>
+      <div class="note">เปลี่ยนสีมีผลตอนกด “เกมใหม่” — ที่เหลือมีผลทันที</div>
+    </div>
+
+    <div class="card">
+      <h2>บันทึกการเดิน</h2>
+      <div class="moves" id="moves"></div>
+    </div>
+  </aside>
+</div>
+
+<div class="modal" id="endModal" hidden role="dialog" aria-modal="true" aria-labelledby="endTitle">
+  <div class="modal-box" id="endBox">
+    <div class="modal-ico" id="endIco"></div>
+    <h2 id="endTitle"></h2>
+    <p id="endSub"></p>
+    <div class="modal-btns">
+      <button class="btn primary" id="endNew" style="grid-column:auto">เล่นอีกเกม</button>
+      <button class="btn" id="endClose">ดูกระดาน</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- chess core: board, legal moves, SAN, game status ---------- */
+const FILES = 'abcdefgh';
+const sqName = s => FILES[s & 7] + (8 - (s >> 3));
+const sqIdx = n => (8 - parseInt(n[1], 10)) * 8 + FILES.indexOf(n[0]);
+const isWhite = p => p >= 'A' && p <= 'Z';
+const colorOf = p => (isWhite(p) ? 'w' : 'b');
+
+const KN = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+const KG = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const DIAG = [[-1,-1],[-1,1],[1,-1],[1,1]];
+const ORTH = [[-1,0],[1,0],[0,-1],[0,1]];
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+function fromFen(fen) {
+  const [pp, t, c, ep, hm, fm] = fen.trim().split(/\s+/);
+  const b = new Array(64).fill(null);
+  let i = 0;
+  for (const ch of pp) {
+    if (ch === '/') continue;
+    if (ch >= '1' && ch <= '8') i += +ch; else b[i++] = ch;
+  }
+  return {
+    b, turn: t,
+    castle: { K: c.includes('K'), Q: c.includes('Q'), k: c.includes('k'), q: c.includes('q') },
+    ep: ep === '-' ? -1 : sqIdx(ep),
+    hm: +hm || 0, fm: +fm || 1
+  };
+}
+
+function toFen(s) {
+  let out = '';
+  for (let r = 0; r < 8; r++) {
+    let empty = 0;
+    for (let f = 0; f < 8; f++) {
+      const p = s.b[r * 8 + f];
+      if (!p) empty++;
+      else { if (empty) { out += empty; empty = 0; } out += p; }
+    }
+    if (empty) out += empty;
+    if (r < 7) out += '/';
+  }
+  const c = (s.castle.K ? 'K' : '') + (s.castle.Q ? 'Q' : '') + (s.castle.k ? 'k' : '') + (s.castle.q ? 'q' : '');
+  return `${out} ${s.turn} ${c || '-'} ${s.ep >= 0 ? sqName(s.ep) : '-'} ${s.hm} ${s.fm}`;
+}
+
+function startState() { return fromFen(START_FEN); }
+
+function attacked(b, sq, by) {
+  const r = sq >> 3, f = sq & 7;
+  const pr = by === 'w' ? r + 1 : r - 1;
+  if (pr >= 0 && pr < 8) {
+    for (const df of [-1, 1]) {
+      const pf = f + df;
+      if (pf >= 0 && pf < 8 && b[pr * 8 + pf] === (by === 'w' ? 'P' : 'p')) return true;
+    }
+  }
+  const N = by === 'w' ? 'N' : 'n', K = by === 'w' ? 'K' : 'k';
+  for (const [dr, df] of KN) {
+    const rr = r + dr, ff = f + df;
+    if (rr >= 0 && rr < 8 && ff >= 0 && ff < 8 && b[rr * 8 + ff] === N) return true;
+  }
+  for (const [dr, df] of KG) {
+    const rr = r + dr, ff = f + df;
+    if (rr >= 0 && rr < 8 && ff >= 0 && ff < 8 && b[rr * 8 + ff] === K) return true;
+  }
+  const B = by === 'w' ? 'B' : 'b', R = by === 'w' ? 'R' : 'r', Q = by === 'w' ? 'Q' : 'q';
+  for (const [dr, df] of DIAG) {
+    let rr = r + dr, ff = f + df;
+    while (rr >= 0 && rr < 8 && ff >= 0 && ff < 8) {
+      const p = b[rr * 8 + ff];
+      if (p) { if (p === B || p === Q) return true; break; }
+      rr += dr; ff += df;
+    }
+  }
+  for (const [dr, df] of ORTH) {
+    let rr = r + dr, ff = f + df;
+    while (rr >= 0 && rr < 8 && ff >= 0 && ff < 8) {
+      const p = b[rr * 8 + ff];
+      if (p) { if (p === R || p === Q) return true; break; }
+      rr += dr; ff += df;
+    }
+  }
+  return false;
+}
+
+function pseudo(s) {
+  const moves = [];
+  const b = s.b, me = s.turn, opp = me === 'w' ? 'b' : 'w';
+  for (let sq = 0; sq < 64; sq++) {
+    const p = b[sq];
+    if (!p || colorOf(p) !== me) continue;
+    const t = p.toUpperCase(), r = sq >> 3, f = sq & 7;
+    if (t === 'P') {
+      const dir = me === 'w' ? -1 : 1, startR = me === 'w' ? 6 : 1, promoR = me === 'w' ? 0 : 7;
+      const r1 = r + dir;
+      if (r1 < 0 || r1 > 7) continue;
+      const to = r1 * 8 + f;
+      if (!b[to]) {
+        if (r1 === promoR) for (const pr of 'qrbn') moves.push({ from: sq, to, promo: pr });
+        else {
+          moves.push({ from: sq, to });
+          const to2 = (r + 2 * dir) * 8 + f;
+          if (r === startR && !b[to2]) moves.push({ from: sq, to: to2 });
+        }
+      }
+      for (const df of [-1, 1]) {
+        const ff = f + df;
+        if (ff < 0 || ff > 7) continue;
+        const t2 = r1 * 8 + ff, q = b[t2];
+        if (q && colorOf(q) === opp) {
+          if (r1 === promoR) for (const pr of 'qrbn') moves.push({ from: sq, to: t2, promo: pr });
+          else moves.push({ from: sq, to: t2 });
+        } else if (!q && t2 === s.ep) {
+          moves.push({ from: sq, to: t2, ep: true });
+        }
+      }
+    } else if (t === 'N' || t === 'K') {
+      for (const [dr, df] of (t === 'N' ? KN : KG)) {
+        const rr = r + dr, ff = f + df;
+        if (rr < 0 || rr > 7 || ff < 0 || ff > 7) continue;
+        const q = b[rr * 8 + ff];
+        if (!q || colorOf(q) === opp) moves.push({ from: sq, to: rr * 8 + ff });
+      }
+    } else {
+      const dirs = t === 'B' ? DIAG : t === 'R' ? ORTH : DIAG.concat(ORTH);
+      for (const [dr, df] of dirs) {
+        let rr = r + dr, ff = f + df;
+        while (rr >= 0 && rr < 8 && ff >= 0 && ff < 8) {
+          const q = b[rr * 8 + ff];
+          if (!q) moves.push({ from: sq, to: rr * 8 + ff });
+          else { if (colorOf(q) === opp) moves.push({ from: sq, to: rr * 8 + ff }); break; }
+          rr += dr; ff += df;
+        }
+      }
+    }
+  }
+  // castling
+  if (me === 'w' && b[60] === 'K') {
+    if (s.castle.K && b[63] === 'R' && !b[61] && !b[62] &&
+        !attacked(b, 60, 'b') && !attacked(b, 61, 'b') && !attacked(b, 62, 'b'))
+      moves.push({ from: 60, to: 62 });
+    if (s.castle.Q && b[56] === 'R' && !b[57] && !b[58] && !b[59] &&
+        !attacked(b, 60, 'b') && !attacked(b, 59, 'b') && !attacked(b, 58, 'b'))
+      moves.push({ from: 60, to: 58 });
+  } else if (me === 'b' && b[4] === 'k') {
+    if (s.castle.k && b[7] === 'r' && !b[5] && !b[6] &&
+        !attacked(b, 4, 'w') && !attacked(b, 5, 'w') && !attacked(b, 6, 'w'))
+      moves.push({ from: 4, to: 6 });
+    if (s.castle.q && b[0] === 'r' && !b[1] && !b[2] && !b[3] &&
+        !attacked(b, 4, 'w') && !attacked(b, 3, 'w') && !attacked(b, 2, 'w'))
+      moves.push({ from: 4, to: 2 });
+  }
+  return moves;
+}
+
+function apply(s, m) {
+  const b = s.b.slice();
+  const p = b[m.from], me = s.turn;
+  const isPawn = p.toUpperCase() === 'P';
+  const capture = !!b[m.to] || !!m.ep;
+  b[m.to] = m.promo ? (me === 'w' ? m.promo.toUpperCase() : m.promo) : p;
+  b[m.from] = null;
+  if (m.ep) b[m.to + (me === 'w' ? 8 : -8)] = null;
+  if (p.toUpperCase() === 'K' && Math.abs((m.to & 7) - (m.from & 7)) === 2) {
+    if (m.to === 62) { b[61] = b[63]; b[63] = null; }
+    else if (m.to === 58) { b[59] = b[56]; b[56] = null; }
+    else if (m.to === 6) { b[5] = b[7]; b[7] = null; }
+    else if (m.to === 2) { b[3] = b[0]; b[0] = null; }
+  }
+  const c = { ...s.castle };
+  if (p === 'K') { c.K = false; c.Q = false; }
+  if (p === 'k') { c.k = false; c.q = false; }
+  for (const q of [m.from, m.to]) {
+    if (q === 63) c.K = false;
+    if (q === 56) c.Q = false;
+    if (q === 7) c.k = false;
+    if (q === 0) c.q = false;
+  }
+  const ep = isPawn && Math.abs(m.to - m.from) === 16 ? (m.from + m.to) / 2 : -1;
+  return {
+    b, turn: me === 'w' ? 'b' : 'w', castle: c, ep,
+    hm: isPawn || capture ? 0 : s.hm + 1,
+    fm: s.fm + (me === 'b' ? 1 : 0)
+  };
+}
+
+function legal(s) {
+  const out = [], me = s.turn, opp = me === 'w' ? 'b' : 'w', king = me === 'w' ? 'K' : 'k';
+  for (const m of pseudo(s)) {
+    const n = apply(s, m);
+    if (!attacked(n.b, n.b.indexOf(king), opp)) out.push(m);
+  }
+  return out;
+}
+
+function inCheck(s) {
+  const k = s.b.indexOf(s.turn === 'w' ? 'K' : 'k');
+  return attacked(s.b, k, s.turn === 'w' ? 'b' : 'w');
+}
+
+function san(s, m, legalMoves) {
+  const p = s.b[m.from], t = p.toUpperCase();
+  let str;
+  if (t === 'K' && Math.abs((m.to & 7) - (m.from & 7)) === 2) {
+    str = (m.to & 7) === 6 ? 'O-O' : 'O-O-O';
+  } else {
+    const cap = !!s.b[m.to] || !!m.ep;
+    if (t === 'P') {
+      str = cap ? FILES[m.from & 7] + 'x' : '';
+      str += sqName(m.to);
+      if (m.promo) str += '=' + m.promo.toUpperCase();
+    } else {
+      str = t;
+      const others = (legalMoves || legal(s)).filter(o => o.from !== m.from && s.b[o.from] === p && o.to === m.to);
+      if (others.length) {
+        const sameFile = others.some(o => (o.from & 7) === (m.from & 7));
+        const sameRank = others.some(o => (o.from >> 3) === (m.from >> 3));
+        if (!sameFile) str += FILES[m.from & 7];
+        else if (!sameRank) str += 8 - (m.from >> 3);
+        else str += sqName(m.from);
+      }
+      if (cap) str += 'x';
+      str += sqName(m.to);
+    }
+  }
+  const n = apply(s, m);
+  if (inCheck(n)) str += legal(n).length ? '+' : '#';
+  return str;
+}
+
+function uci(m) { return sqName(m.from) + sqName(m.to) + (m.promo || ''); }
+
+function findUci(s, str) {
+  const from = sqIdx(str.slice(0, 2)), to = sqIdx(str.slice(2, 4)), promo = str[4];
+  return legal(s).find(m => m.from === from && m.to === to && (m.promo || undefined) === promo) || null;
+}
+
+function positionKey(s) {
+  let k = s.b.map(p => p || '.').join('') + s.turn +
+    (s.castle.K ? 'K' : '') + (s.castle.Q ? 'Q' : '') + (s.castle.k ? 'k' : '') + (s.castle.q ? 'q' : '');
+  if (s.ep >= 0 && legal(s).some(m => m.ep)) k += sqName(s.ep);
+  return k;
+}
+
+function insufficient(s) {
+  const rest = [];
+  s.b.forEach((p, i) => { if (p && p.toUpperCase() !== 'K') rest.push([p.toUpperCase(), i]); });
+  if (!rest.length) return true;
+  if (rest.length === 1 && (rest[0][0] === 'B' || rest[0][0] === 'N')) return true;
+  if (rest.every(x => x[0] === 'B')) {
+    const colors = new Set(rest.map(x => ((x[1] >> 3) + (x[1] & 7)) & 1));
+    return colors.size === 1;
+  }
+  return false;
+}
+
+/* states: all positions from the start; returns {over, result, reason} */
+function gameStatus(states) {
+  const s = states[states.length - 1];
+  const moves = legal(s);
+  if (!moves.length) {
+    if (inCheck(s)) return { over: true, result: s.turn === 'w' ? '0-1' : '1-0', reason: 'checkmate' };
+    return { over: true, result: '1/2-1/2', reason: 'stalemate' };
+  }
+  if (insufficient(s)) return { over: true, result: '1/2-1/2', reason: 'insufficient' };
+  if (s.hm >= 100) return { over: true, result: '1/2-1/2', reason: 'fifty' };
+  const key = positionKey(s);
+  let n = 0;
+  for (const st of states) if (positionKey(st) === key) n++;
+  if (n >= 3) return { over: true, result: '1/2-1/2', reason: 'repetition' };
+  return { over: false };
+}
+
+function perft(s, d) {
+  if (d === 0) return 1;
+  const ms = legal(s);
+  if (d === 1) return ms.length;
+  let n = 0;
+  for (const m of ms) n += perft(apply(s, m), d - 1);
+  return n;
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { fromFen, toFen, startState, legal, apply, perft, san, uci, findUci, gameStatus, inCheck, sqName, sqIdx };
+}
+
+</script>
+
+<script>
+/* ---------- app ---------- */
+const $ = id => document.getElementById(id);
+const GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+const RELEASE = 'https://github.com/nmrugg/stockfish.js/releases/download/v19.0.1/';
+const ENGINES = {
+  'lite-mt': { file: 'stockfish-19-lite.js', mt: true },
+  lite:      { file: 'stockfish-19-lite-single.js', mt: false },
+  'full-mt': { file: 'stockfish-19.js', mt: true },
+  full:      { file: 'stockfish-19-single.js', mt: false }
+};
+
+/* settings (persisted when storage is available) */
+const DEFAULTS = { color: 'w', elo: 1800, max: false, ms: 1000, engine: 'lite-mt', sound: true };
+let settings = { ...DEFAULTS };
+try { Object.assign(settings, JSON.parse(localStorage.getItem('sf19chess') || '{}')); } catch (e) {}
+if (!ENGINES[settings.engine]) settings.engine = DEFAULTS.engine;
+const saveSettings = () => { try { localStorage.setItem('sf19chess', JSON.stringify(settings)); } catch (e) {} };
+
+/* game state */
+let states, moves, sans, me, flip, selected, lastMove, hint, result, legalMoves;
+let evalInfo = null;
+
+/* engine state */
+let worker = null, ready = false, searching = false, purposeNow = 'play', searchSide = 'w', afterCancel = null;
+
+/* ---------- sound (synthesized with WebAudio, no audio files) ---------- */
+let actx = null, master = null, noiseBuf = null;
+function audio() {
+  if (!settings.sound) return null;
+  try {
+    if (!actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      actx = new AC();
+      master = actx.createGain(); master.gain.value = 0.9; master.connect(actx.destination);
+      noiseBuf = actx.createBuffer(1, Math.floor(actx.sampleRate * 0.12), actx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
+  } catch (e) { return null; }
+}
+['pointerdown', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, () => audio(), { passive: true }));
+
+function tone(c, t, freq, dur, type, vol, toFreq) {
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (toFreq) o.frequency.exponentialRampToValueAtTime(toFreq, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+}
+function knock(c, t, vol, pitch) { // wooden "tock": filtered noise click + short low thump
+  const n = c.createBufferSource(); n.buffer = noiseBuf;
+  const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1500 * pitch; f.Q.value = 0.9;
+  const g = c.createGain();
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+  n.connect(f); f.connect(g); g.connect(master); n.start(t); n.stop(t + 0.1);
+  tone(c, t, 210 * pitch, 0.09, 'sine', vol * 0.9, 90 * pitch);
+}
+const SFX = {
+  move:    (c, t) => knock(c, t, 0.6, 1),
+  capture: (c, t) => { knock(c, t, 0.95, 0.85); knock(c, t + 0.05, 0.55, 1.25); },
+  castle:  (c, t) => { knock(c, t, 0.6, 1); knock(c, t + 0.13, 0.7, 0.9); },
+  promote: (c, t) => { knock(c, t, 0.6, 1); tone(c, t + 0.07, 660, 0.14, 'triangle', 0.25); tone(c, t + 0.15, 990, 0.2, 'triangle', 0.25); },
+  check:   (c, t) => { tone(c, t + 0.07, 920, 0.16, 'sine', 0.3); tone(c, t + 0.07, 1380, 0.16, 'sine', 0.12); },
+  start:   (c, t) => { tone(c, t, 523, 0.14, 'triangle', 0.22); tone(c, t + 0.1, 784, 0.22, 'triangle', 0.22); },
+  win:     (c, t) => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(c, t + i * 0.11, f, i === 4 ? 0.55 : 0.2, 'triangle', 0.28)),
+  lose:    (c, t) => [392, 330, 262, 196].forEach((f, i) => tone(c, t + i * 0.18, f, i === 3 ? 0.6 : 0.26, 'sine', 0.32)),
+  draw:    (c, t) => { tone(c, t, 440, 0.22, 'triangle', 0.25); tone(c, t + 0.2, 440, 0.4, 'triangle', 0.25); }
+};
+function sfx(name, delay = 0) {
+  const c = audio();
+  if (!c || !SFX[name]) return;
+  try { SFX[name](c, c.currentTime + 0.01 + delay); } catch (e) {}
+}
+function syncSoundBtn() {
+  $('bSound').textContent = settings.sound ? '🔊' : '🔇';
+  $('bSound').setAttribute('aria-pressed', String(!!settings.sound));
+}
+
+/* ---------- end-of-game dialog ---------- */
+let endTimer = null;
+function hideEnd() { clearTimeout(endTimer); $('endModal').hidden = true; }
+function showEnd(kind) {
+  const full = Math.ceil(sans.length / 2);
+  const box = $('endBox');
+  box.className = 'modal-box ' + kind;
+  box.querySelectorAll('.confetti').forEach(e => e.remove());
+  if (kind === 'win') {
+    $('endIco').textContent = '🏆'; $('endTitle').textContent = 'คุณชนะ!';
+    $('endSub').textContent = `รุกฆาต Stockfish ได้ใน ${full} ตา`;
+    const colors = ['#6aa84f', '#f2c14e', '#e5534b', '#4c9be8', '#c77dff'];
+    for (let i = 0; i < 36; i++) {
+      const s = document.createElement('i');
+      s.className = 'confetti';
+      s.style.left = Math.random() * 100 + '%';
+      s.style.background = colors[i % colors.length];
+      s.style.animationDuration = 1.6 + Math.random() * 1.6 + 's';
+      s.style.animationDelay = Math.random() * 0.5 + 's';
+      box.appendChild(s);
+    }
+  } else if (kind === 'lose') {
+    $('endIco').textContent = '😵'; $('endTitle').textContent = 'Stockfish ชนะ';
+    $('endSub').textContent = `ถูกรุกฆาตใน ${full} ตา — ลองอีกสักตาไหม`;
+  } else {
+    $('endIco').textContent = '🤝'; $('endTitle').textContent = 'เสมอ';
+    $('endSub').textContent = (REASON[result.reason] || '').replace(/^เสมอ — /, '');
+  }
+  $('endModal').hidden = false;
+  $('endNew').focus();
+}
+function announceEnd() {
+  const winner = result.reason === 'checkmate' ? (result.result === '1-0' ? 'w' : 'b') : null;
+  const kind = winner ? (winner === me ? 'win' : 'lose') : 'draw';
+  sfx(kind, 0.35);
+  clearTimeout(endTimer);
+  endTimer = setTimeout(() => { if (result && result.over) showEnd(kind); }, 650);
+}
+
+/* ---------- engine ---------- */
+function send(cmd) { if (worker) worker.postMessage(cmd); }
+
+function setBadge(kind, text) {
+  $('dot').className = 'dot ' + kind;
+  $('badgeTxt').textContent = text;
+}
+
+function killEngine() {
+  if (worker) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
+  worker = null; ready = false; searching = false; afterCancel = null;
+}
+
+function engineFail(detail) {
+  killEngine();
+  setBadge('err', 'เอนจินไม่พร้อม');
+  const eng = ENGINES[settings.engine], file = eng.file;
+  if (detail === 'isolation') {
+    $('helpMsg').innerHTML = 'เอนจิน <code>' + file + '</code> เป็นแบบหลายเธรด ต้องเสิร์ฟด้วยหัว COOP/COEP (หน้านี้ยังไม่ได้เปิดแบบนั้น) — ใช้ <code>serve.py</code> ที่แนบมา หรือเลือกเอนจินแบบ “single” ในตั้งค่า';
+  } else {
+    $('helpMsg').textContent = location.protocol === 'file:'
+      ? 'หน้านี้ถูกเปิดแบบ file:// ซึ่งเบราว์เซอร์มักไม่ให้สร้าง Web Worker'
+      : 'หาไฟล์ ' + file + ' ข้างๆ หน้านี้ไม่เจอ หรือโหลดไม่ผ่าน';
+  }
+  $('dlJs').textContent = file; $('dlJs').href = RELEASE + file;
+  const w = file.replace(/\.js$/, '.wasm');
+  $('dlWasm').textContent = w; $('dlWasm').href = RELEASE + w;
+  $('help').hidden = false;
+  refreshStatus();
+}
+
+function startEngine() {
+  killEngine();
+  $('help').hidden = true;
+  setBadge('load', 'กำลังโหลดเอนจิน…');
+  if (ENGINES[settings.engine].mt && !self.crossOriginIsolated) { engineFail('isolation'); return; }
+  let w;
+  try { w = new Worker(ENGINES[settings.engine].file); } catch (e) { engineFail(e); return; }
+  worker = w;
+  w.onmessage = ev => onLine(typeof ev.data === 'string' ? ev.data : String(ev.data));
+  w.onerror = ev => { if (ev && ev.preventDefault) ev.preventDefault(); engineFail(ev); };
+  send('uci');
+}
+
+function onLine(line) {
+  if (line === 'uciok') {
+    if (ENGINES[settings.engine].mt) send('setoption name Threads value ' + Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1)));
+    send('isready');
+    return;
+  }
+  if (line === 'readyok') {
+    if (!ready) {
+      ready = true;
+      setBadge('ready', 'Stockfish 19 พร้อม');
+      refreshStatus();
+      maybeEngineMove();
+    }
+    return;
+  }
+  if (line.startsWith('info') && / score /.test(line) && !/(lowerbound|upperbound)/.test(line)) {
+    const sc = line.match(/ score (cp|mate) (-?\d+)/), d = line.match(/ depth (\d+)/);
+    if (sc) {
+      let v = +sc[2];
+      if (searchSide === 'b') v = -v;
+      evalInfo = { kind: sc[1], v, depth: d ? +d[1] : 0 };
+      renderEval();
+    }
+    return;
+  }
+  if (line.startsWith('bestmove')) {
+    searching = false;
+    if (afterCancel) { const f = afterCancel; afterCancel = null; f(); return; }
+    const mv = line.split(/\s+/)[1];
+    const m = mv && mv !== '(none)' ? findUci(cur(), mv) : null;
+    if (purposeNow === 'hint') {
+      hint = m;
+      render(); refreshStatus();
+      return;
+    }
+    if (m && !result.over && cur().turn !== me) play(m);
+    else refreshStatus();
+  }
+}
+
+function cancelThen(fn) {
+  if (!searching) { fn(); return; }
+  afterCancel = fn;
+  send('stop');
+}
+
+function startSearch(purpose) {
+  if (!ready || searching) return;
+  searching = true; purposeNow = purpose; searchSide = cur().turn;
+  const strong = purpose === 'hint' || settings.max;
+  send('setoption name UCI_LimitStrength value ' + (strong ? 'false' : 'true'));
+  if (!strong) send('setoption name UCI_Elo value ' + settings.elo);
+  send('position startpos' + (moves.length ? ' moves ' + moves.map(uci).join(' ') : ''));
+  send('go movetime ' + (purpose === 'hint' ? 1000 : settings.ms));
+  refreshStatus();
+}
+
+function maybeEngineMove() {
+  if (!ready || searching || !result || result.over) return;
+  if (cur().turn === me) return;
+  startSearch('play');
+}
+
+/* ---------- game ---------- */
+const cur = () => states[states.length - 1];
+
+function newGame() {
+  cancelThen(() => {
+    hideEnd();
+    me = settings.color === 'r' ? (Math.random() < 0.5 ? 'w' : 'b') : settings.color;
+    states = [startState()]; moves = []; sans = [];
+    flip = me === 'b'; selected = -1; lastMove = null; hint = null; evalInfo = null;
+    refresh();
+    maybeEngineMove();
+  });
+}
+
+function refresh() {
+  legalMoves = legal(cur());
+  result = gameStatus(states);
+  buildBoard();
+  render(); renderMoves(); renderEval(); refreshStatus();
+}
+
+function canHumanMove() {
+  return result && !result.over && !searching && cur().turn === me && $('promo').hidden;
+}
+
+function play(m) {
+  const s = cur();
+  const cap = !!s.b[m.to] || !!m.ep;
+  const castle = s.b[m.from].toUpperCase() === 'K' && Math.abs((m.to & 7) - (m.from & 7)) === 2;
+  sans.push(san(s, m, legalMoves));
+  states.push(apply(s, m));
+  moves.push(m);
+  lastMove = m; selected = -1; hint = null;
+  refresh();
+  sfx(m.promo ? 'promote' : castle ? 'castle' : cap ? 'capture' : 'move');
+  if (result.over) announceEnd();
+  else { if (inCheck(cur())) sfx('check'); maybeEngineMove(); }
+}
+
+function undo() {
+  cancelThen(() => {
+    if (states.length < 2) return;
+    hideEnd();
+    do { states.pop(); moves.pop(); sans.pop(); } while (states.length > 1 && cur().turn !== me);
+    lastMove = moves.length ? moves[moves.length - 1] : null;
+    selected = -1; hint = null;
+    refresh();
+    maybeEngineMove();
+  });
+}
+
+function askHint() {
+  if (!canHumanMove() || !ready) return;
+  hint = null; selected = -1;
+  startSearch('hint');
+  render();
+}
+
+/* ---------- board UI ---------- */
+function buildBoard() {
+  const board = $('board');
+  [...board.querySelectorAll('.sq')].forEach(e => e.remove());
+  const promo = $('promo');
+  for (let i = 0; i < 64; i++) {
+    const r = i >> 3, c = i & 7;
+    const sq = flip ? (7 - r) * 8 + (7 - c) : r * 8 + c;
+    const el = document.createElement('div');
+    el.className = 'sq';
+    el.dataset.sq = sq; el.dataset.r = r; el.dataset.c = c;
+    board.insertBefore(el, promo);
+  }
+  $('evalbar').classList.toggle('flip', flip);
+}
+
+function render() {
+  const s = cur();
+  const targets = new Map();
+  if (selected >= 0) for (const m of legalMoves) if (m.from === selected) targets.set(m.to, m);
+  const kingSq = inCheck(s) ? s.b.indexOf(s.turn === 'w' ? 'K' : 'k') : -1;
+  const human = canHumanMove();
+  for (const el of $('board').querySelectorAll('.sq')) {
+    const sq = +el.dataset.sq, r = +el.dataset.r, c = +el.dataset.c;
+    const p = s.b[sq];
+    let cls = 'sq ' + (((sq >> 3) + (sq & 7)) & 1 ? 'd' : 'l');
+    if (lastMove && (sq === lastMove.from || sq === lastMove.to)) cls += ' last';
+    if (sq === selected) cls += ' sel';
+    if (hint && (sq === hint.from || sq === hint.to)) cls += ' hint';
+    if (sq === kingSq) cls += ' check';
+    if (targets.has(sq)) cls += p || targets.get(sq).ep ? ' cap' : ' tgt';
+    el.className = cls;
+    let html = '';
+    if (c === 0) html += `<span class="coord r">${8 - (sq >> 3)}</span>`;
+    if (r === 7) html += `<span class="coord f">${FILES[sq & 7]}</span>`;
+    if (p) {
+      const mine = colorOf(p) === me && human;
+      html += `<span class="piece ${colorOf(p)}${mine ? '' : ' locked'}" ${mine ? 'draggable="true"' : ''}>${GLYPH[p.toLowerCase()]}︎</span>`;
+    }
+    el.innerHTML = html;
+  }
+}
+
+function markTargets() { // class-only update, safe to call during a drag
+  const targets = new Map();
+  if (selected >= 0) for (const m of legalMoves) if (m.from === selected) targets.set(m.to, m);
+  for (const el of $('board').querySelectorAll('.sq')) {
+    const sq = +el.dataset.sq;
+    el.classList.toggle('sel', sq === selected);
+    el.classList.remove('tgt', 'cap');
+    if (targets.has(sq)) el.classList.add(cur().b[sq] || targets.get(sq).ep ? 'cap' : 'tgt');
+  }
+}
+
+function tryMove(from, to) {
+  const cands = legalMoves.filter(m => m.from === from && m.to === to);
+  if (!cands.length) return false;
+  if (cands.length > 1) { askPromotion(cands); return true; }
+  play(cands[0]);
+  return true;
+}
+
+function askPromotion(cands) {
+  const box = $('promoBox');
+  box.innerHTML = '';
+  for (const pc of ['q', 'r', 'b', 'n']) {
+    const m = cands.find(x => x.promo === pc);
+    const b = document.createElement('button');
+    b.innerHTML = `<span class="piece ${me}">${GLYPH[pc]}︎</span>`;
+    b.title = { q: 'ควีน', r: 'เรือ', b: 'บิชอป', n: 'ม้า' }[pc];
+    b.onclick = () => { $('promo').hidden = true; play(m); };
+    box.appendChild(b);
+  }
+  $('promo').hidden = false;
+}
+
+$('promo').addEventListener('click', e => {
+  if (e.target === $('promo')) { $('promo').hidden = true; selected = -1; render(); }
+});
+
+$('board').addEventListener('click', e => {
+  const el = e.target.closest('.sq');
+  if (!el || !canHumanMove()) return;
+  const sq = +el.dataset.sq, p = cur().b[sq];
+  if (selected >= 0 && tryMove(selected, sq)) return;
+  if (p && colorOf(p) === me) selected = selected === sq ? -1 : sq;
+  else selected = -1;
+  hint = null;
+  render();
+});
+
+$('board').addEventListener('dragstart', e => {
+  const el = e.target.closest('.sq');
+  if (!el || !canHumanMove()) { e.preventDefault(); return; }
+  selected = +el.dataset.sq;
+  e.dataTransfer.setData('text/plain', String(selected));
+  e.dataTransfer.effectAllowed = 'move';
+  markTargets();
+});
+$('board').addEventListener('dragover', e => { if (e.target.closest('.sq')) e.preventDefault(); });
+$('board').addEventListener('drop', e => {
+  e.preventDefault();
+  const el = e.target.closest('.sq');
+  if (!el || selected < 0) return;
+  const from = selected;
+  if (!tryMove(from, +el.dataset.sq)) { selected = -1; render(); }
+});
+$('board').addEventListener('dragend', () => { if (canHumanMove()) { selected = -1; render(); } });
+
+/* ---------- status / eval / move list ---------- */
+const REASON = {
+  stalemate: 'เสมอ — สเตลเมต (ไม่มีทางเดินแต่ไม่ถูกรุก)',
+  insufficient: 'เสมอ — ตัวหมากไม่พอที่จะรุกฆาต',
+  fifty: 'เสมอ — กฎ 50 ตา',
+  repetition: 'เสมอ — ตำแหน่งซ้ำ 3 ครั้ง'
+};
+
+function refreshStatus() {
+  const line = $('statusline'), t = $('statusTxt');
+  line.classList.toggle('over', !!(result && result.over));
+  if (!result) return;
+  if (result.over) {
+    if (result.reason === 'checkmate') {
+      const winner = result.result === '1-0' ? 'w' : 'b';
+      t.innerHTML = `<strong>รุกฆาต!</strong> ${winner === me ? 'คุณชนะ 🎉' : 'Stockfish ชนะ'}`;
+    } else t.innerHTML = `<strong>${REASON[result.reason]}</strong>`;
+  } else if (searching && purposeNow === 'hint') {
+    t.textContent = 'Stockfish กำลังหาคำใบ้ให้…';
+  } else if (searching) {
+    t.textContent = 'Stockfish กำลังคิด…';
+  } else if (cur().turn === me) {
+    const chk = inCheck(cur()) ? ' <strong style="color:#ff8a80">— รุก!</strong>' : '';
+    const hintTxt = hint ? ` · คำใบ้: <strong>${san(cur(), hint, legalMoves)}</strong>` : '';
+    t.innerHTML = `ถึงตาคุณ (${me === 'w' ? 'ขาว' : 'ดำ'})${chk}${hintTxt}`;
+  } else if (!worker || !ready) {
+    t.textContent = worker ? 'รอเอนจินโหลดเสร็จ…' : 'ไม่มีเอนจิน — ยังเดินไม่ได้จนกว่าจะโหลดเอนจินสำเร็จ';
+  } else t.textContent = 'ตาของ Stockfish';
+  $('bUndo').disabled = states.length < 2;
+  $('bHint').disabled = !(canHumanMove() && ready);
+}
+
+function renderEval() {
+  const txt = $('evalTxt');
+  if (!evalInfo) { $('evalw').style.height = '50%'; txt.textContent = ''; return; }
+  let pct, label;
+  if (evalInfo.kind === 'mate') {
+    pct = evalInfo.v > 0 ? 100 : 0;
+    label = (evalInfo.v > 0 ? '+' : '-') + 'M' + Math.abs(evalInfo.v);
+  } else {
+    pct = 100 / (1 + Math.pow(10, -evalInfo.v / 400));
+    label = (evalInfo.v >= 0 ? '+' : '') + (evalInfo.v / 100).toFixed(2);
+  }
+  $('evalw').style.height = Math.max(3, Math.min(97, pct)) + '%';
+  txt.textContent = `ประเมิน ${label} · depth ${evalInfo.depth}`;
+}
+
+function renderMoves() {
+  const box = $('moves');
+  box.innerHTML = '';
+  sans.forEach((s, i) => {
+    if (i % 2 === 0) {
+      const n = document.createElement('span');
+      n.className = 'n'; n.textContent = (i / 2 + 1) + '.';
+      box.appendChild(n);
+    }
+    const m = document.createElement('span');
+    m.className = 'm' + (i === sans.length - 1 ? ' cur' : '');
+    m.textContent = s;
+    box.appendChild(m);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function pgnText() {
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  const res = result && result.over ? result.result : '*';
+  const head = [
+    '[Event "Casual game vs Stockfish 19"]',
+    `[Date "${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}"]`,
+    `[White "${me === 'w' ? 'Player' : 'Stockfish 19'}"]`,
+    `[Black "${me === 'b' ? 'Player' : 'Stockfish 19'}"]`,
+    `[Result "${res}"]`
+  ];
+  let body = '';
+  sans.forEach((s, i) => { if (i % 2 === 0) body += (i / 2 + 1) + '. '; body += s + ' '; });
+  return head.join('\n') + '\n\n' + body + res;
+}
+
+/* ---------- controls ---------- */
+$('bNew').onclick = () => { sfx('start'); newGame(); };
+$('endNew').onclick = () => { sfx('start'); newGame(); };
+$('endClose').onclick = hideEnd;
+$('endModal').addEventListener('click', e => { if (e.target === $('endModal')) hideEnd(); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && !$('endModal').hidden) hideEnd(); });
+$('bSound').onclick = () => {
+  settings.sound = !settings.sound; saveSettings(); syncSoundBtn();
+  if (settings.sound) sfx('move');
+};
+$('bUndo').onclick = undo;
+$('bHint').onclick = askHint;
+$('bFlip').onclick = () => { flip = !flip; buildBoard(); render(); };
+$('bPgn').onclick = async () => {
+  const text = pgnText();
+  try { await navigator.clipboard.writeText(text); $('bPgn').textContent = 'คัดลอกแล้ว ✓'; }
+  catch (e) { window.prompt('คัดลอก PGN:', text); }
+  setTimeout(() => { $('bPgn').textContent = 'คัดลอก PGN'; }, 1500);
+};
+
+function syncControls() {
+  syncSoundBtn();
+  $('selColor').value = settings.color;
+  $('rngElo').value = settings.elo; $('eloVal').textContent = settings.elo;
+  $('chkMax').checked = settings.max; $('rngElo').disabled = settings.max;
+  $('selMs').value = String(settings.ms);
+  $('selEng').value = settings.engine;
+}
+$('selColor').onchange = e => { settings.color = e.target.value; saveSettings(); };
+$('rngElo').oninput = e => { settings.elo = +e.target.value; $('eloVal').textContent = settings.elo; saveSettings(); };
+$('chkMax').onchange = e => { settings.max = e.target.checked; $('rngElo').disabled = settings.max; saveSettings(); };
+$('selMs').onchange = e => { settings.ms = +e.target.value; saveSettings(); };
+$('selEng').onchange = e => {
+  settings.engine = e.target.value; saveSettings();
+  startEngine();
+};
+
+/* ---------- boot ---------- */
+syncControls();
+newGame();
+startEngine();
+</script>
+</body>
+</html>
