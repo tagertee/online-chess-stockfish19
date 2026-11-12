@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- optional: coi-sw.js adds the COOP/COEP headers on hosts that cannot (e.g. GitHub Pages). Safe to omit. -->
+<script src="coi-sw.js"></script>
 <title>เล่นหมากรุกกับ Stockfish 19</title>
 <style>
   :root{
@@ -633,7 +635,7 @@ const SYNTH = {
   pm:      (c, t) => tone(c, t, 520, 0.3, 'sine', 0.25, 380)
 };
 
-/* Optional real sound files: put them in a "sounds" folder next to index.html, or loose next to it (.mp3 or .ogg).
+/* Optional real sound files: put them in a "sounds" folder next to index.html, or loose next to it (.mp3 or .ogg); "Chees sounds" also works.
    Any file that is missing/undecodable silently falls back to the synthesized version above. */
 const SOUND_FILES = {
   move: 'Move', capture: 'Capture', check: 'Check', start: 'CountDown0',
@@ -643,8 +645,9 @@ const SOUND_FILES = {
 const rawSounds = {}, bufs = {};
 const getSound = url => fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject());
 for (const [name, file] of Object.entries(SOUND_FILES)) {
-  // tries .mp3 then .ogg, in sounds/ first and then loose next to index.html
-  const urls = ['sounds/' + file + '.mp3', file + '.mp3', 'sounds/' + file + '.ogg', file + '.ogg'];
+  // tries .mp3 then .ogg, looking in sounds/, next to index.html, then in "Chees sounds/"
+  const urls = [];
+  for (const ext of ['.mp3', '.ogg']) for (const dir of ['sounds/', '', 'Chees%20sounds/']) urls.push(dir + file + ext);
   urls.reduce((p, u) => p.catch(() => getSound(u)), Promise.reject())
     .then(b => { rawSounds[name] = b; decodeSounds(); }).catch(() => {});
 }
